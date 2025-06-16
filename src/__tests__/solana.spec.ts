@@ -143,7 +143,13 @@ describe('Solana', () => {
       // );
       // expect(tokenAux.toBase58()).toBe(token.toBase58())
       // console.log(`Token account ${token.toBase58()} created successfully`)
-      const token = await createToken(connection, mint, adminKeypair, user, extensions)
+      const token = await createToken(
+        connection,
+        mint,
+        adminKeypair,
+        user,
+        extensions
+      )
       console.log(`Token account ${token.toBase58()} created successfully`)
 
       expect(1 + 1).toBe(2)
