@@ -13,6 +13,7 @@ import {
   getMint,
   createInitializeNonTransferableMintInstruction,
   createAccount,
+  ImmutableOwnerLayout,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -90,7 +91,10 @@ describe('Solana', () => {
         //   defaultState,
         //   TOKEN_2022_PROGRAM_ID
         // ),
-        createInitializeNonTransferableMintInstruction(mint, TOKEN_2022_PROGRAM_ID),
+        createInitializeNonTransferableMintInstruction(
+          mint,
+          TOKEN_2022_PROGRAM_ID
+        ),
         createInitializeMint2Instruction(
           mint,
           0,
@@ -126,10 +130,9 @@ describe('Solana', () => {
         throw e
       }
 
-      const tokenKeypair = Keypair.generate()
-      const token = tokenKeypair.publicKey
-
       // TokenInvalidAccountOwnerError
+      // const tokenKeypair = Keypair.generate()
+      // const token = tokenKeypair.publicKey
       // const tokenAux = await createAccount(
       //   connection,
       //   adminKeypair,
@@ -139,6 +142,8 @@ describe('Solana', () => {
       // );
       // expect(tokenAux.toBase58()).toBe(token.toBase58())
       // console.log(`Token account ${token.toBase58()} created successfully`)
+      const token = await createToken(connection, mint, adminKeypair, user)
+      console.log(`Token account ${token.toBase58()} created successfully`)
 
       expect(1 + 1).toBe(2)
     })
@@ -162,13 +167,47 @@ async function airdrop(
   publicKey: PublicKey,
   amount: number
 ): Promise<void> {
-  const signature = await connection.requestAirdrop(
-    publicKey,
-    amount
-  )
+  const signature = await connection.requestAirdrop(publicKey, amount)
   await connection.confirmTransaction(signature, 'confirmed')
   const account = await connection.getAccountInfo(publicKey)
   if (!account) {
     throw new Error(`Account ${publicKey} not found after airdrop`)
   }
+}
+
+async function createToken(
+  connection: Connection,
+  mint: PublicKey,
+  minter: Keypair,
+  owner: PublicKey
+): Promise<PublicKey> {
+  const tokenKeypair = Keypair.generate()
+  const token = tokenKeypair.publicKey
+  // const accountLen = getAccountLen([ExtensionType.ImmutableOwner])
+  const accountLen = getAccountLen([])
+  const lamportsToken =
+    await connection.getMinimumBalanceForRentExemption(accountLen)
+  const transaction = new Transaction().add(
+    SystemProgram.createAccount({
+      fromPubkey: minter.publicKey,
+      newAccountPubkey: token,
+      space: accountLen,
+      lamports: lamportsToken,
+      programId: TOKEN_2022_PROGRAM_ID,
+    }),
+    // createInitializeImmutableOwnerInstruction(token, TOKEN_2022_PROGRAM_ID),
+    createInitializeAccount3Instruction(
+      token,
+      mint,
+      owner,
+      TOKEN_2022_PROGRAM_ID
+    )
+  )
+  await sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [minter, tokenKeypair],
+    undefined
+  )
+  return token
 }
