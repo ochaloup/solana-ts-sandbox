@@ -1,0 +1,40 @@
+{
+  "name": "solana-ts-sandbox",
+  "version": "1.0.0",
+  "description": "A Solana TypeScript sandbox project",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "jest --runInBand --verbose --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "clean": "rm -rf dist"
+  },
+  "keywords": ["typescript", "jest", "testing"],
+  "author": "chalda",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^22.5.4",
+    "@typescript-eslint/eslint-plugin": "^8.5.0",
+    "@typescript-eslint/parser": "^8.5.0",
+    "eslint-plugin-jest": "28.13.3",
+    "eslint": "^9.10.0",
+    "@marinade.finance/ts-common": "3.3.0",
+    "@solana/web3.js": "^1.98.2",
+    "@solana/spl-token": "^0.4.13",
+    "bn.js": "^5.2.1",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
