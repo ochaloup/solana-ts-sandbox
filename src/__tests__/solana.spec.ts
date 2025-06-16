@@ -290,7 +290,7 @@ async function createSeededToken(
   owner: PublicKey,
   extensions: ExtensionType[]
 ): Promise<PublicKey> {
-  const accountLen = getAccountLen(extensions) + 1000
+  const accountLen = getAccountLen(extensions)
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
   const mint = mintKeypair.publicKey
