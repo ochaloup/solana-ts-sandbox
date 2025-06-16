@@ -27,6 +27,7 @@ import {
 } from './setup/solana-validator'
 import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 import { Decimal } from 'decimal.js'
+import { send } from 'node:process'
 
 describe('Solana', () => {
   let connection: Connection
@@ -130,44 +131,32 @@ describe('Solana', () => {
         throw e
       }
 
-      // TokenInvalidAccountOwnerError
-      // const tokenKeypair = Keypair.generate()
-      // const token = tokenKeypair.publicKey
-      // const tokenAux = await createAccount(
+      // const token = await createAssociatedToken(
       //   connection,
-      //   adminKeypair,
       //   mint,
+      //   adminKeypair,
+      //   user
+      // )
+      // console.log(
+      //   `Associated token account ${token.toBase58()} created successfully`
+      // )
+      // const token2 = await createAssociatedToken(
+      //   connection,
+      //   mint,
+      //   adminKeypair,
+      //   user2
+      // )
+      // console.log(
+      //   `Associated token account ${token2.toBase58()} created successfully`
+      // )
+      // const token3 = await createToken(
+      //   connection,
+      //   mint,
+      //   adminKeypair,
       //   user,
-      //   tokenKeypair,
-      // );
-      // expect(tokenAux.toBase58()).toBe(token.toBase58())
-      // console.log(`Token account ${token.toBase58()} created successfully`)
-      const token = await createAssociatedToken(
-        connection,
-        mint,
-        adminKeypair,
-        user
-      )
-      console.log(
-        `Associated token account ${token.toBase58()} created successfully`
-      )
-      const token2 = await createAssociatedToken(
-        connection,
-        mint,
-        adminKeypair,
-        user2
-      )
-      console.log(
-        `Associated token account ${token2.toBase58()} created successfully`
-      )
-      const token3 = await createToken(
-        connection,
-        mint,
-        adminKeypair,
-        user,
-        extensions
-      )
-      console.log(`Token account ${token3.toBase58()} created successfully`)
+      //   extensions
+      // )
+      // console.log(`Token account ${token3.toBase58()} created successfully`)
       const token4 = await createSeededToken(
         connection,
         mintKeypair,
@@ -197,7 +186,7 @@ function jsonStringify(data: unknown, indent: number | null = 2): string {
 async function airdrop(
   connection: Connection,
   publicKey: PublicKey,
-  amount: number
+  amount: number = LAMPORTS_PER_SOL
 ): Promise<void> {
   const signature = await connection.requestAirdrop(publicKey, amount)
   await connection.confirmTransaction(signature, 'confirmed')
@@ -205,6 +194,15 @@ async function airdrop(
   if (!account) {
     throw new Error(`Account ${publicKey} not found after airdrop`)
   }
+}
+
+async function createUser(
+  connected: Connection,
+  lamports: number = LAMPORTS_PER_SOL
+): Promise<Keypair> {
+  const user = Keypair.generate()
+  await airdrop(connected, user.publicKey, lamports)
+  return user
 }
 
 async function createToken(
@@ -276,6 +274,15 @@ async function createAssociatedToken(
   return associatedToken
 }
 
+// not working, not clear why now. Probably Token Program does not support seeds.
+/*
+    Message: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x0. 
+    Logs: 
+    [
+      "Program 11111111111111111111111111111111 invoke [1]",
+      "Program 11111111111111111111111111111111 failed: custom program error: 0x0"
+    ]. 
+*/
 async function createSeededToken(
   connection: Connection,
   mintKeypair: Keypair,
@@ -283,14 +290,14 @@ async function createSeededToken(
   owner: PublicKey,
   extensions: ExtensionType[]
 ): Promise<PublicKey> {
-  const accountLen = getAccountLen(extensions)
+  const accountLen = getAccountLen(extensions) + 1000
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
   const mint = mintKeypair.publicKey
 
   const seed = '0x42' + owner.toBase58()
   const seededToken = await PublicKey.createWithSeed(
-    mint,
+    minter.publicKey,
     seed,
     TOKEN_2022_PROGRAM_ID
   )
@@ -300,7 +307,7 @@ async function createSeededToken(
       newAccountPubkey: seededToken,
       space: accountLen,
       lamports: lamportsToken,
-      basePubkey: mint,
+      basePubkey: minter.publicKey,
       seed,
       programId: TOKEN_2022_PROGRAM_ID,
     })
@@ -318,7 +325,7 @@ async function createSeededToken(
   await sendAndConfirmTransaction(
     connection,
     transaction,
-    [minter, mintKeypair],
+    [minter],
     undefined
   )
   return seededToken
