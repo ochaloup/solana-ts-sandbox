@@ -12,6 +12,7 @@ import {
   Connection,
   Keypair,
   LAMPORTS_PER_SOL,
+  sendAndConfirmTransaction,
   SystemProgram,
   Transaction,
 } from '@solana/web3.js'
@@ -75,6 +76,9 @@ describe('Solana', () => {
           TOKEN_2022_PROGRAM_ID
         )
       )
+
+      await sendAndConfirmTransaction(connection, transaction, [adminKeypair, mintKeypair], undefined);
+
       // try {
       //     await sendAndConfirmTransaction(connection, transaction, [adminKeypair, mintKeypair], undefined);
       // } catch (e) {
