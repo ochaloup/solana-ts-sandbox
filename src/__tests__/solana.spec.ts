@@ -153,7 +153,8 @@ describe('Solana', () => {
         mint,
         adminKeypair,
         user,
-        extensions
+        extensions,
+        true,
       )
       console.log(`Token account ${token.toBase58()} created successfully`)
       const token2 = await createToken(
