@@ -16,12 +16,17 @@ import {
   SystemProgram,
   Transaction,
 } from '@solana/web3.js'
-import { getLocalRpc } from './setup/solana-validator'
+import { spawnTestValidator, waitForLocalRpcConnection } from './setup/solana-validator'
+import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 
 describe('Solana', () => {
   let connection: Connection
-  beforeAll(() => {
-    connection = getLocalRpc()
+  let testValidator: WrappedProcess | undefined = undefined
+  beforeAll(async () => {
+      testValidator = spawnTestValidator();
+        const waitTimeS = 7;
+        console.log(`Waiting for ${waitTimeS} seconds for local test validator, PID: ${testValidator.process.pid}`);
+        connection = await waitForLocalRpcConnection(waitTimeS);
   })
 
   describe('test token 2022', () => {
@@ -77,15 +82,13 @@ describe('Solana', () => {
         )
       )
 
-      await sendAndConfirmTransaction(connection, transaction, [adminKeypair, mintKeypair], undefined);
-
-      // try {
-      //     await sendAndConfirmTransaction(connection, transaction, [adminKeypair, mintKeypair], undefined);
-      // } catch (e) {
-      //     console.error('Error creating mint:', e);
-      //     console.error('Error creating mint:', JSON.stringify(e));
-      //     throw e;
-      // }
+      try {
+          await sendAndConfirmTransaction(connection, transaction, [adminKeypair, mintKeypair], undefined);
+      } catch (e) {
+          console.error('Error creating mint:', e);
+          console.error('Error creating mint:', JSON.stringify(e));
+          throw e;
+      }
       console.log('Mint created successfully:', transaction)
 
       expect(1 + 1).toBe(2)

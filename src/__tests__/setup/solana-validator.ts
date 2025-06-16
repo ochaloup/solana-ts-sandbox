@@ -38,9 +38,10 @@ export async function waitForRpc(connection: Connection, timeoutSeconds = 10): P
   throw new Error(`RPC is not ready after ${timeoutSeconds} seconds!`);
 }
 
-export async function waitForLocalRpcConnection(timeoutSeconds = 10): Promise<void> {
+export async function waitForLocalRpcConnection(timeoutSeconds = 10): Promise<Connection> {
   const rpc = getLocalRpc();
   await waitForRpc(rpc, timeoutSeconds);
+  return rpc;
 }
 
 export function getLocalRpc(): Connection {
