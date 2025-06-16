@@ -1,6 +1,4 @@
 import {
-  AccountState,
-  createInitializeDefaultAccountStateInstruction,
   createInitializeMint2Instruction,
   createInitializeMintCloseAuthorityInstruction,
   ExtensionType,
@@ -8,13 +6,11 @@ import {
   TOKEN_2022_PROGRAM_ID,
   createInitializePermanentDelegateInstruction,
   getAccountLen,
-  createInitializeImmutableOwnerInstruction,
-  createInitializeAccount3Instruction,
   getMint,
   createInitializeNonTransferableMintInstruction,
-  createAccount,
-  ImmutableOwnerLayout,
   createInitializeAccountInstruction,
+  createAssociatedTokenAccountInstruction,
+  getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -24,7 +20,6 @@ import {
   sendAndConfirmTransaction,
   SystemProgram,
   Transaction,
-  TransactionInstruction,
 } from '@solana/web3.js'
 import {
   spawnTestValidator,
@@ -32,7 +27,6 @@ import {
 } from './setup/solana-validator'
 import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 import { Decimal } from 'decimal.js'
-import { Key } from 'readline'
 
 describe('Solana', () => {
   let connection: Connection
@@ -148,23 +142,40 @@ describe('Solana', () => {
       // );
       // expect(tokenAux.toBase58()).toBe(token.toBase58())
       // console.log(`Token account ${token.toBase58()} created successfully`)
-      const token = await createToken(
+      const token = await createAssociatedToken(
+        connection,
+        mint,
+        adminKeypair,
+        user
+      )
+      console.log(
+        `Associated token account ${token.toBase58()} created successfully`
+      )
+      const token2 = await createAssociatedToken(
+        connection,
+        mint,
+        adminKeypair,
+        user2
+      )
+      console.log(
+        `Associated token account ${token2.toBase58()} created successfully`
+      )
+      const token3 = await createToken(
         connection,
         mint,
         adminKeypair,
         user,
-        extensions,
-        true,
-      )
-      console.log(`Token account ${token.toBase58()} created successfully`)
-      const token2 = await createToken(
-        connection,
-        mint,
-        adminKeypair,
-        user2,
         extensions
       )
-      console.log(`Token account ${token2.toBase58()} created successfully`)
+      console.log(`Token account ${token3.toBase58()} created successfully`)
+      const token4 = await createSeededToken(
+        connection,
+        mintKeypair,
+        adminKeypair,
+        user,
+        extensions
+      )
+      console.log(`Token account ${token4.toBase58()} created successfully`)
 
       expect(1 + 1).toBe(2)
     })
@@ -201,52 +212,27 @@ async function createToken(
   mint: PublicKey,
   minter: Keypair,
   owner: PublicKey,
-  extensions: ExtensionType[] = [],
-  isSeeded: boolean = false
+  extensions: ExtensionType[]
 ): Promise<PublicKey> {
   const accountLen = getAccountLen(extensions)
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
-
-  let initIx: TransactionInstruction
-  let tokenKeypair: Keypair | undefined = undefined
-  let token: PublicKey
-
-  if (isSeeded) {
-    const seed = 'token-' + mint.toBase58() + '-' + owner.toBase58()
-    token = await PublicKey.createWithSeed(
-      minter.publicKey,
-      seed,
-      TOKEN_2022_PROGRAM_ID
-    )
-    initIx = SystemProgram.createAccountWithSeed({
-      fromPubkey: minter.publicKey,
-      newAccountPubkey: token,
-      basePubkey: minter.publicKey,
-      seed,
-      space: accountLen,
-      lamports: lamportsToken,
-      programId: TOKEN_2022_PROGRAM_ID,
-    })
-  } else {
-    tokenKeypair = Keypair.generate()
-    token = tokenKeypair.publicKey
-    initIx = SystemProgram.createAccount({
-      fromPubkey: minter.publicKey,
-      newAccountPubkey: token,
-      space: accountLen,
-      lamports: lamportsToken,
-      programId: TOKEN_2022_PROGRAM_ID,
-    })
-  }
+  const tokenKeypair = Keypair.generate()
+  const token = tokenKeypair.publicKey
 
   const transaction = new Transaction().add(
-    initIx,
     // createInitializeDefaultAccountStateInstruction(
     //   token,
     //   AccountState.Frozen,
     //   TOKEN_2022_PROGRAM_ID
     // ),
+    SystemProgram.createAccount({
+      fromPubkey: minter.publicKey,
+      newAccountPubkey: token,
+      space: accountLen,
+      lamports: lamportsToken,
+      programId: TOKEN_2022_PROGRAM_ID,
+    }),
     createInitializeAccountInstruction(
       token,
       mint,
@@ -254,13 +240,86 @@ async function createToken(
       TOKEN_2022_PROGRAM_ID
     )
   )
-
-  const signers = tokenKeypair ? [minter, tokenKeypair] : [minter]
+  transaction.feePayer = minter.publicKey
   await sendAndConfirmTransaction(
     connection,
     transaction,
-    signers,
+    [minter, tokenKeypair],
     undefined
   )
   return token
+}
+
+async function createAssociatedToken(
+  connection: Connection,
+  mint: PublicKey,
+  minter: Keypair,
+  owner: PublicKey
+): Promise<PublicKey> {
+  const associatedToken = await getAssociatedTokenAddress(
+    mint,
+    owner,
+    false,
+    TOKEN_2022_PROGRAM_ID
+  )
+  const transaction = new Transaction().add(
+    createAssociatedTokenAccountInstruction(
+      minter.publicKey,
+      associatedToken,
+      owner,
+      mint,
+      TOKEN_2022_PROGRAM_ID
+    )
+  )
+  transaction.feePayer = minter.publicKey
+  await sendAndConfirmTransaction(connection, transaction, [minter], undefined)
+  return associatedToken
+}
+
+async function createSeededToken(
+  connection: Connection,
+  mintKeypair: Keypair,
+  minter: Keypair,
+  owner: PublicKey,
+  extensions: ExtensionType[]
+): Promise<PublicKey> {
+  const accountLen = getAccountLen(extensions)
+  const lamportsToken =
+    await connection.getMinimumBalanceForRentExemption(accountLen)
+  const mint = mintKeypair.publicKey
+
+  const seed = '0x42' + owner.toBase58()
+  const seededToken = await PublicKey.createWithSeed(
+    mint,
+    seed,
+    TOKEN_2022_PROGRAM_ID
+  )
+  const transaction = new Transaction().add(
+    SystemProgram.createAccountWithSeed({
+      fromPubkey: minter.publicKey,
+      newAccountPubkey: seededToken,
+      space: accountLen,
+      lamports: lamportsToken,
+      basePubkey: mint,
+      seed,
+      programId: TOKEN_2022_PROGRAM_ID,
+    })
+    // createInitializeAccountInstruction(
+    //   seededToken,
+    //   mint,
+    //   owner,
+    //   TOKEN_2022_PROGRAM_ID
+    // )
+  )
+  transaction.feePayer = minter.publicKey
+  console.log(
+    `Creating seeded token account ${seededToken.toBase58()} with mint ${mint.toBase58()}`
+  )
+  await sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [minter, mintKeypair],
+    undefined
+  )
+  return seededToken
 }
