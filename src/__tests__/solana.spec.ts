@@ -14,6 +14,7 @@ import {
   createInitializeNonTransferableMintInstruction,
   createAccount,
   ImmutableOwnerLayout,
+  createInitializeAccountInstruction,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -142,7 +143,7 @@ describe('Solana', () => {
       // );
       // expect(tokenAux.toBase58()).toBe(token.toBase58())
       // console.log(`Token account ${token.toBase58()} created successfully`)
-      const token = await createToken(connection, mint, adminKeypair, user)
+      const token = await createToken(connection, mint, adminKeypair, user, extensions)
       console.log(`Token account ${token.toBase58()} created successfully`)
 
       expect(1 + 1).toBe(2)
@@ -179,12 +180,12 @@ async function createToken(
   connection: Connection,
   mint: PublicKey,
   minter: Keypair,
-  owner: PublicKey
+  owner: PublicKey,
+  extensions: ExtensionType[] = []
 ): Promise<PublicKey> {
   const tokenKeypair = Keypair.generate()
   const token = tokenKeypair.publicKey
-  // const accountLen = getAccountLen([ExtensionType.ImmutableOwner])
-  const accountLen = getAccountLen([])
+  const accountLen = getAccountLen(extensions)
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
   const transaction = new Transaction().add(
@@ -195,8 +196,12 @@ async function createToken(
       lamports: lamportsToken,
       programId: TOKEN_2022_PROGRAM_ID,
     }),
-    // createInitializeImmutableOwnerInstruction(token, TOKEN_2022_PROGRAM_ID),
-    createInitializeAccount3Instruction(
+    // createInitializeDefaultAccountStateInstruction(
+    //   token,
+    //   AccountState.Frozen,
+    //   TOKEN_2022_PROGRAM_ID
+    // ),
+    createInitializeAccountInstruction(
       token,
       mint,
       owner,
