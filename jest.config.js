@@ -30,7 +30,7 @@ module.exports = {
   verbose: true,
   clearMocks: true,
   restoreMocks: true,
-  // global setup and teardown somehow works wrong
+  // global teardown does not work properly with websocket connections
   // globalSetup: '<rootDir>/src/__tests__/setup/globalSetup.ts',
   // globalTeardown: '<rootDir>/src/__tests__/setup/globalTeardown.ts',
 };

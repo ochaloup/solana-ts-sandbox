@@ -7,6 +7,9 @@ import {
   getMintLen,
   TOKEN_2022_PROGRAM_ID,
   createInitializePermanentDelegateInstruction,
+  getAccountLen,
+  createInitializeImmutableOwnerInstruction,
+  createInitializeAccount3Instruction,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -16,23 +19,32 @@ import {
   SystemProgram,
   Transaction,
 } from '@solana/web3.js'
-import { spawnTestValidator, waitForLocalRpcConnection } from './setup/solana-validator'
+import {
+  spawnTestValidator,
+  waitForLocalRpcConnection,
+} from './setup/solana-validator'
 import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 
 describe('Solana', () => {
   let connection: Connection
   let testValidator: WrappedProcess | undefined = undefined
   beforeAll(async () => {
-      testValidator = spawnTestValidator();
-        const waitTimeS = 7;
-        console.log(`Waiting for ${waitTimeS} seconds for local test validator, PID: ${testValidator.process.pid}`);
-        connection = await waitForLocalRpcConnection(waitTimeS);
+    testValidator = spawnTestValidator()
+    const waitTimeS = 7
+    console.log(
+      `Waiting for ${waitTimeS} seconds for local test validator, PID: ${testValidator.process.pid}`
+    )
+    connection = await waitForLocalRpcConnection(waitTimeS)
   })
 
   describe('test token 2022', () => {
     it('mint token 2022', async () => {
       const mintKeypair = Keypair.generate()
       const mint = mintKeypair.publicKey
+
+      const userKeypair = Keypair.generate()
+      const user = userKeypair.publicKey
+      await connection.requestAirdrop(user, 11 * LAMPORTS_PER_SOL)
 
       const adminKeypair = Keypair.generate()
       const admin = adminKeypair.publicKey
@@ -73,7 +85,6 @@ describe('Solana', () => {
           TOKEN_2022_PROGRAM_ID
         ),
         createInitializeMint2Instruction(
-          // createInitializeMintInstruction(
           mint,
           0,
           admin,
@@ -82,14 +93,42 @@ describe('Solana', () => {
         )
       )
 
-      try {
-          await sendAndConfirmTransaction(connection, transaction, [adminKeypair, mintKeypair], undefined);
-      } catch (e) {
-          console.error('Error creating mint:', e);
-          console.error('Error creating mint:', JSON.stringify(e));
-          throw e;
-      }
-      console.log('Mint created successfully:', transaction)
+      await sendAndConfirmTransaction(
+        connection,
+        transaction,
+        [adminKeypair, mintKeypair],
+        undefined
+      )
+      console.log(`Mint ${mint.toBase58()} created successfully`)
+
+      const accountLen = getAccountLen([ExtensionType.ImmutableOwner])
+      const lamportsToken =
+        await connection.getMinimumBalanceForRentExemption(accountLen)
+      const tokenKeypair = Keypair.generate()
+      const token = tokenKeypair.publicKey
+      const transactionToken = new Transaction().add(
+        SystemProgram.createAccount({
+          fromPubkey: admin,
+          newAccountPubkey: token,
+          space: accountLen,
+          lamports: lamportsToken,
+          programId: TOKEN_2022_PROGRAM_ID,
+        }),
+        createInitializeImmutableOwnerInstruction(token, TOKEN_2022_PROGRAM_ID),
+        createInitializeAccount3Instruction(
+          token,
+          mint,
+          user,
+          TOKEN_2022_PROGRAM_ID
+        )
+      )
+      await sendAndConfirmTransaction(
+        connection,
+        transactionToken,
+        [userKeypair, tokenKeypair],
+        undefined
+      )
+      console.log(`Token account ${token.toBase58()} created successfully`)
 
       expect(1 + 1).toBe(2)
     })
