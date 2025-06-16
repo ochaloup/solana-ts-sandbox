@@ -24,6 +24,7 @@ import {
   sendAndConfirmTransaction,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
 } from '@solana/web3.js'
 import {
   spawnTestValidator,
@@ -31,6 +32,7 @@ import {
 } from './setup/solana-validator'
 import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 import { Decimal } from 'decimal.js'
+import { Key } from 'readline'
 
 describe('Solana', () => {
   let connection: Connection
@@ -52,6 +54,9 @@ describe('Solana', () => {
       const userKeypair = Keypair.generate()
       const user = userKeypair.publicKey
       await airdrop(connection, user, 3 * LAMPORTS_PER_SOL)
+      const user2Keypair = Keypair.generate()
+      const user2 = user2Keypair.publicKey
+      await airdrop(connection, user2, 3 * LAMPORTS_PER_SOL)
 
       const adminKeypair = Keypair.generate()
       const admin = adminKeypair.publicKey
@@ -151,6 +156,14 @@ describe('Solana', () => {
         extensions
       )
       console.log(`Token account ${token.toBase58()} created successfully`)
+      const token2 = await createToken(
+        connection,
+        mint,
+        adminKeypair,
+        user2,
+        extensions
+      )
+      console.log(`Token account ${token2.toBase58()} created successfully`)
 
       expect(1 + 1).toBe(2)
     })
@@ -187,21 +200,47 @@ async function createToken(
   mint: PublicKey,
   minter: Keypair,
   owner: PublicKey,
-  extensions: ExtensionType[] = []
+  extensions: ExtensionType[] = [],
+  isSeeded: boolean = false
 ): Promise<PublicKey> {
-  const tokenKeypair = Keypair.generate()
-  const token = tokenKeypair.publicKey
   const accountLen = getAccountLen(extensions)
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
-  const transaction = new Transaction().add(
-    SystemProgram.createAccount({
+
+  let initIx: TransactionInstruction
+  let tokenKeypair: Keypair | undefined = undefined
+  let token: PublicKey
+
+  if (isSeeded) {
+    const seed = 'token-' + mint.toBase58() + '-' + owner.toBase58()
+    token = await PublicKey.createWithSeed(
+      minter.publicKey,
+      seed,
+      TOKEN_2022_PROGRAM_ID
+    )
+    initIx = SystemProgram.createAccountWithSeed({
+      fromPubkey: minter.publicKey,
+      newAccountPubkey: token,
+      basePubkey: minter.publicKey,
+      seed,
+      space: accountLen,
+      lamports: lamportsToken,
+      programId: TOKEN_2022_PROGRAM_ID,
+    })
+  } else {
+    tokenKeypair = Keypair.generate()
+    token = tokenKeypair.publicKey
+    initIx = SystemProgram.createAccount({
       fromPubkey: minter.publicKey,
       newAccountPubkey: token,
       space: accountLen,
       lamports: lamportsToken,
       programId: TOKEN_2022_PROGRAM_ID,
-    }),
+    })
+  }
+
+  const transaction = new Transaction().add(
+    initIx,
     // createInitializeDefaultAccountStateInstruction(
     //   token,
     //   AccountState.Frozen,
@@ -214,10 +253,12 @@ async function createToken(
       TOKEN_2022_PROGRAM_ID
     )
   )
+
+  const signers = tokenKeypair ? [minter, tokenKeypair] : [minter]
   await sendAndConfirmTransaction(
     connection,
     transaction,
-    [minter, tokenKeypair],
+    signers,
     undefined
   )
   return token
