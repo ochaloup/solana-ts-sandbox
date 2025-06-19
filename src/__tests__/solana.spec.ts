@@ -15,6 +15,7 @@ import {
   transfer,
   burn,
   getAccount,
+  TOKEN_PROGRAM_ID,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -58,7 +59,7 @@ describe('Solana', () => {
 
       const adminKeypair = Keypair.generate()
       const admin = adminKeypair.publicKey
-      await airdrop(connection, admin, LAMPORTS_PER_SOL)
+      await airdrop(connection, admin, 55 * LAMPORTS_PER_SOL)
 
 
       // ------------------- CREATE MINT -------------------
@@ -366,12 +367,13 @@ async function createSeededToken(
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
   const mint = mintKeypair.publicKey
-
-  const seed = '0x42' + owner.toBase58()
+  
+  const programId = TOKEN_2022_PROGRAM_ID
+  const seed = owner.toBase58().slice(0, 32) // Use owner address as seed, limited to 32 bytes
   const seededToken = await PublicKey.createWithSeed(
     minter.publicKey,
     seed,
-    TOKEN_2022_PROGRAM_ID
+    programId
   )
   const transaction = new Transaction().add(
     SystemProgram.createAccountWithSeed({
@@ -381,7 +383,7 @@ async function createSeededToken(
       lamports: lamportsToken,
       basePubkey: minter.publicKey,
       seed,
-      programId: TOKEN_2022_PROGRAM_ID,
+      programId,
     })
     // createInitializeAccountInstruction(
     //   seededToken,
