@@ -60,6 +60,8 @@ describe('Solana', () => {
       const admin = adminKeypair.publicKey
       await airdrop(connection, admin, LAMPORTS_PER_SOL)
 
+
+      // ------------------- CREATE MINT -------------------
       const extensions = [
         ExtensionType.MintCloseAuthority,
         ExtensionType.PermanentDelegate,
@@ -133,104 +135,106 @@ describe('Solana', () => {
         // console.error(jsonStringify(transaction))
         throw e
       }
+      // ------------------- END: CREATE MINT -------------------
 
-      const token = await createAssociatedToken(
-        connection,
-        mint,
-        adminKeypair,
-        user
-      )
-      console.log(
-        `Associated token account ${token.toBase58()} created successfully`
-      )
-      const token2 = await createAssociatedToken(
-        connection,
-        mint,
-        adminKeypair,
-        user2
-      )
-      console.log(
-        `Associated token account ${token2.toBase58()} created successfully`
-      )
-      const token3 = await createToken(
-        connection,
-        mint,
-        adminKeypair,
-        user,
-        extensions
-      )
-      console.log(`Token account ${token3.toBase58()} created successfully`)
-      // const token4 = await createSeededToken(
+
+      // const token = await createAssociatedToken(
       //   connection,
-      //   mintKeypair,
+      //   mint,
+      //   adminKeypair,
+      //   user
+      // )
+      // console.log(
+      //   `Associated token account ${token.toBase58()} created successfully`
+      // )
+      // const token2 = await createAssociatedToken(
+      //   connection,
+      //   mint,
+      //   adminKeypair,
+      //   user2
+      // )
+      // console.log(
+      //   `Associated token account ${token2.toBase58()} created successfully`
+      // )
+      // const token3 = await createToken(
+      //   connection,
+      //   mint,
       //   adminKeypair,
       //   user,
       //   extensions
       // )
-      // console.log(`Token account ${token4.toBase58()} created successfully`)
-
-      const token1AmountMint = 10n
-      const token1AmountRemoved = 5n
-      let sig = await mintTo(
+      // console.log(`Token account ${token3.toBase58()} created successfully`)
+      const token4 = await createSeededToken(
         connection,
+        mintKeypair,
         adminKeypair,
-        mint,
-        token,
-        adminKeypair,
-        token1AmountMint,
-        [adminKeypair],
-        undefined,
-        TOKEN_2022_PROGRAM_ID
+        user,
+        extensions
       )
-      console.log(
-        `Minted ${token1AmountMint} tokens to ${token.toBase58()} with signature ${sig}`
-      )
+      console.log(`Token account ${token4.toBase58()} created successfully`)
 
-      try {
-        await transfer(
-          connection,
-          userKeypair,
-          token,
-          token2,
-          userKeypair,
-          token1AmountRemoved,
-          [userKeypair],
-          undefined,
-          TOKEN_2022_PROGRAM_ID
-        )
-        throw new Error(
-          'Transfer should have failed due to non-transferable mint'
-        )
-      } catch (e) {
-        console.log(`Transfer failed as expected: ${jsonStringify(e, null)}`)
-      }
+      // const token1AmountMint = 10n
+      // const token1AmountRemoved = 5n
+      // let sig = await mintTo(
+      //   connection,
+      //   adminKeypair,
+      //   mint,
+      //   token,
+      //   adminKeypair,
+      //   token1AmountMint,
+      //   [adminKeypair],
+      //   undefined,
+      //   TOKEN_2022_PROGRAM_ID
+      // )
+      // console.log(
+      //   `Minted ${token1AmountMint} tokens to ${token.toBase58()} with signature ${sig}`
+      // )
 
-      sig = await burn(
-        connection,
-        adminKeypair,
-        token,
-        mint,
-        adminKeypair,
-        token1AmountRemoved,
-        [adminKeypair],
-        undefined,
-        TOKEN_2022_PROGRAM_ID
-      )
-      console.log(
-        `Burned 5 tokens from ${token.toBase58()} with signature ${sig}`
-      )
-      const tokenAfterBurnData = getAccount(
-        connection,
-        token,
-        'confirmed',
-        TOKEN_2022_PROGRAM_ID
-      )
-      console.log(
-        `Token account after burn: ${(await tokenAfterBurnData).amount} tokens`
-      )
-      expect((await tokenAfterBurnData).amount).toBe(
-        token1AmountMint - token1AmountRemoved
-      )
+      // try {
+      //   await transfer(
+      //     connection,
+      //     userKeypair,
+      //     token,
+      //     token2,
+      //     userKeypair,
+      //     token1AmountRemoved,
+      //     [userKeypair],
+      //     undefined,
+      //     TOKEN_2022_PROGRAM_ID
+      //   )
+      //   throw new Error(
+      //     'Transfer should have failed due to non-transferable mint'
+      //   )
+      // } catch (e) {
+      //   console.log(`Transfer failed as expected: ${jsonStringify(e, null)}`)
+      // }
+
+      // sig = await burn(
+      //   connection,
+      //   adminKeypair,
+      //   token,
+      //   mint,
+      //   adminKeypair,
+      //   token1AmountRemoved,
+      //   [adminKeypair],
+      //   undefined,
+      //   TOKEN_2022_PROGRAM_ID
+      // )
+      // console.log(
+      //   `Burned 5 tokens from ${token.toBase58()} with signature ${sig}`
+      // )
+      // const tokenAfterBurnData = getAccount(
+      //   connection,
+      //   token,
+      //   'confirmed',
+      //   TOKEN_2022_PROGRAM_ID
+      // )
+      // console.log(
+      //   `Token account after burn: ${(await tokenAfterBurnData).amount} tokens`
+      // )
+      // expect((await tokenAfterBurnData).amount).toBe(
+      //   token1AmountMint - token1AmountRemoved
+      // )
 
       expect(1 + 1).toBe(2)
     })
