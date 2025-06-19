@@ -371,7 +371,7 @@ async function createSeededToken(
   const programId = TOKEN_2022_PROGRAM_ID
   const seed = owner.toBase58().slice(0, 32) // Use owner address as seed, limited to 32 bytes
   const seededToken = await PublicKey.createWithSeed(
-    minter.publicKey,
+    mintKeypair.publicKey,
     seed,
     programId
   )
@@ -381,7 +381,7 @@ async function createSeededToken(
       newAccountPubkey: seededToken,
       space: accountLen,
       lamports: lamportsToken,
-      basePubkey: minter.publicKey,
+      basePubkey: mintKeypair.publicKey,
       seed,
       programId,
     })
