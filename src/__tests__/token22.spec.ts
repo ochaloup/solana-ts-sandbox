@@ -423,16 +423,6 @@ async function createAssociatedToken(
   return associatedToken
 }
 
-// not working, not clear why now. Probably Token Program does not support seeds.
-/*
-    Message: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x0. 
-    Logs: 
-    [
-      "Program 11111111111111111111111111111111 invoke [1]",
-      "Program 11111111111111111111111111111111 failed: custom program error: 0x0"
-    ]. 
-*/
-
 async function createSeededToken(
   connection: Connection,
   mintKeypair: Keypair,
@@ -446,6 +436,7 @@ async function createSeededToken(
   const mint = mintKeypair.publicKey
 
   const programId = TOKEN_2022_PROGRAM_ID
+  // seed cannot be longer than 32 chars, so we use md5 hash of owner public key
   const seed = crypto.createHash('md5').update(owner.toBase58()).digest('hex')
   const seededToken = await PublicKey.createWithSeed(
     mintKeypair.publicKey,
