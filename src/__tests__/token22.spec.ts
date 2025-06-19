@@ -15,8 +15,11 @@ import {
   transfer,
   burn,
   getAccount,
-  TOKEN_PROGRAM_ID,
   createInitializeAccount3Instruction,
+  setAuthority,
+  AuthorityType,
+  freezeAccount,
+  approve,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -62,7 +65,6 @@ describe('Solana', () => {
       const adminKeypair = Keypair.generate()
       const admin = adminKeypair.publicKey
       await airdrop(connection, admin, 55 * LAMPORTS_PER_SOL)
-
 
       // ------------------- CREATE MINT -------------------
       const extensions = [
@@ -140,33 +142,32 @@ describe('Solana', () => {
       }
       // ------------------- END: CREATE MINT -------------------
 
-
-      // const token = await createAssociatedToken(
-      //   connection,
-      //   mint,
-      //   adminKeypair,
-      //   user
-      // )
-      // console.log(
-      //   `Associated token account ${token.toBase58()} created successfully`
-      // )
-      // const token2 = await createAssociatedToken(
-      //   connection,
-      //   mint,
-      //   adminKeypair,
-      //   user2
-      // )
-      // console.log(
-      //   `Associated token account ${token2.toBase58()} created successfully`
-      // )
-      // const token3 = await createToken(
-      //   connection,
-      //   mint,
-      //   adminKeypair,
-      //   user,
-      //   extensions
-      // )
-      // console.log(`Token account ${token3.toBase58()} created successfully`)
+      const token = await createAssociatedToken(
+        connection,
+        mint,
+        adminKeypair,
+        user
+      )
+      console.log(
+        `Associated token account ${token.toBase58()} created successfully`
+      )
+      const token2 = await createAssociatedToken(
+        connection,
+        mint,
+        adminKeypair,
+        user2
+      )
+      console.log(
+        `Associated account ${token2.toBase58()} created successfully`
+      )
+      const token3 = await createToken(
+        connection,
+        mint,
+        adminKeypair,
+        user,
+        extensions
+      )
+      console.log(`Token account ${token3.toBase58()} created successfully`)
       const token4 = await createSeededToken(
         connection,
         mintKeypair,
@@ -174,72 +175,146 @@ describe('Solana', () => {
         user,
         extensions
       )
-      console.log(`Token account ${token4.toBase58()} created successfully`)
+      console.log(
+        `Seeded token account ${token4.toBase58()} created successfully`
+      )
 
-      // const token1AmountMint = 10n
-      // const token1AmountRemoved = 5n
-      // let sig = await mintTo(
-      //   connection,
-      //   adminKeypair,
-      //   mint,
-      //   token,
-      //   adminKeypair,
-      //   token1AmountMint,
-      //   [adminKeypair],
-      //   undefined,
-      //   TOKEN_2022_PROGRAM_ID
-      // )
-      // console.log(
-      //   `Minted ${token1AmountMint} tokens to ${token.toBase58()} with signature ${sig}`
-      // )
+      const mintAmount = 100n
+      await multipleMint({
+        connection,
+        minter: adminKeypair,
+        mint,
+        mintAmount,
+        tokens: [token, token2, token3, token4],
+      })
 
-      // try {
-      //   await transfer(
-      //     connection,
-      //     userKeypair,
-      //     token,
-      //     token2,
-      //     userKeypair,
-      //     token1AmountRemoved,
-      //     [userKeypair],
-      //     undefined,
-      //     TOKEN_2022_PROGRAM_ID
-      //   )
-      //   throw new Error(
-      //     'Transfer should have failed due to non-transferable mint'
-      //   )
-      // } catch (e) {
-      //   console.log(`Transfer failed as expected: ${jsonStringify(e, null)}`)
-      // }
+      // Failing to transfer from non-transferable mint
+      const transferAmount = 10n
 
-      // sig = await burn(
-      //   connection,
-      //   adminKeypair,
-      //   token,
-      //   mint,
-      //   adminKeypair,
-      //   token1AmountRemoved,
-      //   [adminKeypair],
-      //   undefined,
-      //   TOKEN_2022_PROGRAM_ID
-      // )
-      // console.log(
-      //   `Burned 5 tokens from ${token.toBase58()} with signature ${sig}`
-      // )
-      // const tokenAfterBurnData = getAccount(
-      //   connection,
-      //   token,
-      //   'confirmed',
-      //   TOKEN_2022_PROGRAM_ID
-      // )
-      // console.log(
-      //   `Token account after burn: ${(await tokenAfterBurnData).amount} tokens`
-      // )
-      // expect((await tokenAfterBurnData).amount).toBe(
-      //   token1AmountMint - token1AmountRemoved
-      // )
+      await expect(
+        transfer(
+          connection,
+          userKeypair,
+          token,
+          token2,
+          userKeypair,
+          transferAmount,
+          [userKeypair],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+      let token1 = await getAccount(
+        connection,
+        token,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token1.amount).toBe(mintAmount)
+      expect(token1.owner.toBase58()).toBe(user.toBase58())
+      expect(token1.delegate?.toBase58()).toBeUndefined()
 
-      expect(1 + 1).toBe(2)
+      // Failing to change authority
+      await expect(
+        setAuthority(
+          connection,
+          adminKeypair,
+          token,
+          userKeypair,
+          AuthorityType.AccountOwner,
+          user2,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/The owner authority cannot be changed/)
+      await expect(
+        setAuthority(
+          connection,
+          adminKeypair,
+          token3,
+          userKeypair,
+          AuthorityType.AccountOwner,
+          user2,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/The owner authority cannot be changed/)
+      await expect(
+        setAuthority(
+          connection,
+          adminKeypair,
+          token4,
+          userKeypair,
+          AuthorityType.AccountOwner,
+          user2,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/The owner authority cannot be changed/)
+
+      // User cannot freeze account (frozen account cannot be burned)
+      // note to unfreeze account, you need to call 'revoke' on the frozen account
+      await expect(
+        freezeAccount(
+          connection,
+          adminKeypair,
+          token,
+          mint,
+          userKeypair,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/owner does not match/)
+
+      // User can burn
+      await burn(
+          connection,
+          adminKeypair,
+          token,
+          mint,
+          userKeypair,
+          transferAmount,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+
+      // User can delegate
+      await approve(
+        connection,
+        adminKeypair,
+        token,
+        user2,
+        userKeypair,
+        LAMPORTS_PER_SOL * 10,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+
+      // Admin can burn
+      await burn(
+        connection,
+        adminKeypair,
+        token,
+        mint,
+        adminKeypair,
+        transferAmount,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+      token1 = await getAccount(
+        connection,
+        token,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token1.amount).toBe(mintAmount - 2n*transferAmount)
     })
   })
 })
@@ -357,7 +432,7 @@ async function createAssociatedToken(
       "Program 11111111111111111111111111111111 failed: custom program error: 0x0"
     ]. 
 */
-// eslint-disable-next-line  @typescript-eslint/no-unused-vars
+
 async function createSeededToken(
   connection: Connection,
   mintKeypair: Keypair,
@@ -369,7 +444,7 @@ async function createSeededToken(
   const lamportsToken =
     await connection.getMinimumBalanceForRentExemption(accountLen)
   const mint = mintKeypair.publicKey
-  
+
   const programId = TOKEN_2022_PROGRAM_ID
   const seed = crypto.createHash('md5').update(owner.toBase58()).digest('hex')
   const seededToken = await PublicKey.createWithSeed(
@@ -398,6 +473,46 @@ async function createSeededToken(
   console.log(
     `Creating seeded token account ${seededToken.toBase58()} with mint ${mint.toBase58()}`
   )
-  await sendAndConfirmTransaction(connection, transaction, [minter, mintKeypair], undefined)
+  await sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [minter, mintKeypair],
+    undefined
+  )
   return seededToken
+}
+
+async function multipleMint({
+  connection,
+  minter,
+  mint,
+  mintAmount,
+  tokens,
+}: {
+  connection: Connection
+  minter: Keypair
+  mint: PublicKey
+  mintAmount: bigint
+  tokens: PublicKey[]
+}): Promise<string[]> {
+  const signatures: string[] = []
+  for (const token of tokens) {
+    const sig = await mintTo(
+      connection,
+      minter,
+      mint,
+      token,
+      minter,
+      mintAmount,
+      [minter],
+      undefined,
+      TOKEN_2022_PROGRAM_ID
+    )
+    signatures.push(sig)
+  }
+  console.log(
+    `Minted ${mintAmount} tokens to ${tokens.map(t => t.toBase58()).join(', ')} with signatures ${signatures.join(', ')}`
+  )
+
+  return signatures
 }
