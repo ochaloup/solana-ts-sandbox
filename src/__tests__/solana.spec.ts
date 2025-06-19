@@ -16,6 +16,7 @@ import {
   burn,
   getAccount,
   TOKEN_PROGRAM_ID,
+  createInitializeAccount3Instruction,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -32,6 +33,7 @@ import {
 } from './setup/solana-validator'
 import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 import { Decimal } from 'decimal.js'
+import crypto from 'crypto'
 
 describe('Solana', () => {
   let connection: Connection
@@ -369,7 +371,7 @@ async function createSeededToken(
   const mint = mintKeypair.publicKey
   
   const programId = TOKEN_2022_PROGRAM_ID
-  const seed = owner.toBase58().slice(0, 32) // Use owner address as seed, limited to 32 bytes
+  const seed = crypto.createHash('md5').update(owner.toBase58()).digest('hex')
   const seededToken = await PublicKey.createWithSeed(
     mintKeypair.publicKey,
     seed,
@@ -384,18 +386,18 @@ async function createSeededToken(
       basePubkey: mintKeypair.publicKey,
       seed,
       programId,
-    })
-    // createInitializeAccountInstruction(
-    //   seededToken,
-    //   mint,
-    //   owner,
-    //   TOKEN_2022_PROGRAM_ID
-    // )
+    }),
+    createInitializeAccount3Instruction(
+      seededToken,
+      mint,
+      owner,
+      TOKEN_2022_PROGRAM_ID
+    )
   )
   transaction.feePayer = minter.publicKey
   console.log(
     `Creating seeded token account ${seededToken.toBase58()} with mint ${mint.toBase58()}`
   )
-  await sendAndConfirmTransaction(connection, transaction, [minter], undefined)
+  await sendAndConfirmTransaction(connection, transaction, [minter, mintKeypair], undefined)
   return seededToken
 }
