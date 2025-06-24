@@ -20,6 +20,8 @@ import {
   AuthorityType,
   freezeAccount,
   approve,
+  revoke,
+  thawAccount,
 } from '@solana/spl-token'
 import {
   Connection,
@@ -65,6 +67,9 @@ describe('Solana', () => {
       const adminKeypair = Keypair.generate()
       const admin = adminKeypair.publicKey
       await airdrop(connection, admin, 55 * LAMPORTS_PER_SOL)
+
+      const txFeePayer = Keypair.generate()
+      await airdrop(connection, txFeePayer.publicKey, 99 * LAMPORTS_PER_SOL)
 
       // ------------------- CREATE MINT -------------------
       const extensions = [
@@ -194,10 +199,10 @@ describe('Solana', () => {
       await expect(
         transfer(
           connection,
-          userKeypair,
+          txFeePayer,
           token,
           token2,
-          userKeypair,
+          userKeypair, // from authority
           transferAmount,
           [userKeypair],
           undefined,
@@ -218,7 +223,7 @@ describe('Solana', () => {
       await expect(
         setAuthority(
           connection,
-          adminKeypair,
+          txFeePayer,
           token,
           userKeypair,
           AuthorityType.AccountOwner,
@@ -231,7 +236,7 @@ describe('Solana', () => {
       await expect(
         setAuthority(
           connection,
-          adminKeypair,
+          txFeePayer,
           token3,
           userKeypair,
           AuthorityType.AccountOwner,
@@ -244,7 +249,7 @@ describe('Solana', () => {
       await expect(
         setAuthority(
           connection,
-          adminKeypair,
+          txFeePayer,
           token4,
           userKeypair,
           AuthorityType.AccountOwner,
@@ -256,11 +261,11 @@ describe('Solana', () => {
       ).rejects.toThrow(/The owner authority cannot be changed/)
 
       // User cannot freeze account (frozen account cannot be burned)
-      // note to unfreeze account, you need to call 'revoke' on the frozen account
+      // note to unfreeze account, you need to call 'thaw' on the frozen account
       await expect(
         freezeAccount(
           connection,
-          adminKeypair,
+          txFeePayer,
           token,
           mint,
           userKeypair,
@@ -270,23 +275,64 @@ describe('Solana', () => {
         )
       ).rejects.toThrow(/owner does not match/)
 
-      // User can burn
-      await burn(
+      // Admin may freeze and unfreeze account
+      await freezeAccount(
+        connection,
+        txFeePayer,
+        token,
+        mint,
+        adminKeypair,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+      console.log(
+        `Token account ${token.toBase58()} frozen successfully by admin ${admin.toBase58()}`
+      )
+      // user cannot un-freeze account
+      await expect(
+        thawAccount(
           connection,
-          adminKeypair,
+          txFeePayer,
           token,
           mint,
           userKeypair,
-          transferAmount,
           undefined,
           undefined,
           TOKEN_2022_PROGRAM_ID
         )
+      ).rejects.toThrow(/owner does not match/)
+      await thawAccount(
+        connection,
+        txFeePayer,
+        token,
+        mint,
+        adminKeypair,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+      console.log(
+        `Token account ${token.toBase58()} thawed successfully by admin ${admin.toBase58()}`
+      )
 
-      // User can delegate
+      // User can burn
+      await burn(
+        connection,
+        txFeePayer,
+        token,
+        mint,
+        userKeypair,
+        transferAmount,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+
+      // User can delegate (revoke is to undelegate)
       await approve(
         connection,
-        adminKeypair,
+        txFeePayer,
         token,
         user2,
         userKeypair,
@@ -295,11 +341,38 @@ describe('Solana', () => {
         undefined,
         TOKEN_2022_PROGRAM_ID
       )
+      // Delegate cannot transfer but he can burn
+      await expect(
+        transfer(
+          connection,
+          txFeePayer,
+          token,
+          token2,
+          user2Keypair, // from authority
+          transferAmount,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+      // User can un-delegate
+      await revoke(
+        connection,
+        txFeePayer,
+        token,
+        userKeypair,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+      console.log(
+        `Token account ${token.toBase58()} un-delegated successfully by user ${user.toBase58()}`
+      )
 
       // Admin can burn
       await burn(
         connection,
-        adminKeypair,
+        txFeePayer,
         token,
         mint,
         adminKeypair,
@@ -314,7 +387,7 @@ describe('Solana', () => {
         'confirmed',
         TOKEN_2022_PROGRAM_ID
       )
-      expect(token1.amount).toBe(mintAmount - 2n*transferAmount)
+      expect(token1.amount).toBe(mintAmount - 2n * transferAmount)
     })
   })
 })
