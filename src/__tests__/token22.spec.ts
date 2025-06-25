@@ -147,14 +147,14 @@ describe('Solana', () => {
       }
       // ------------------- END: CREATE MINT -------------------
 
-      const token = await createAssociatedToken(
+      const token1 = await createAssociatedToken(
         connection,
         mint,
         adminKeypair,
         user
       )
       console.log(
-        `Associated token account ${token.toBase58()} created successfully`
+        `Associated token account ${token1.toBase58()} created successfully`
       )
       const token2 = await createAssociatedToken(
         connection,
@@ -190,7 +190,7 @@ describe('Solana', () => {
         minter: adminKeypair,
         mint,
         mintAmount,
-        tokens: [token, token2, token3, token4],
+        tokens: [token1, token2, token3, token4],
       })
 
       // Failing to transfer from non-transferable mint
@@ -200,7 +200,7 @@ describe('Solana', () => {
         transfer(
           connection,
           txFeePayer,
-          token,
+          token1,
           token2,
           userKeypair, // from authority
           transferAmount,
@@ -209,22 +209,43 @@ describe('Solana', () => {
           TOKEN_2022_PROGRAM_ID
         )
       ).rejects.toThrow(/Transfer is disabled for this mint/)
-      let token1 = await getAccount(
+      let token1Data = await getAccount(
         connection,
-        token,
+        token1,
         'confirmed',
         TOKEN_2022_PROGRAM_ID
       )
-      expect(token1.amount).toBe(mintAmount)
-      expect(token1.owner.toBase58()).toBe(user.toBase58())
-      expect(token1.delegate?.toBase58()).toBeUndefined()
+      expect(token1Data.amount).toBe(mintAmount)
+      expect(token1Data.owner.toBase58()).toBe(user.toBase58())
+      expect(token1Data.delegate?.toBase58()).toBeUndefined()
+      // not possible to transfer token to other token account of the same user
+      await expect(
+        transfer(
+          connection,
+          txFeePayer,
+          token1,
+          token3, // token 3 owner == user
+          userKeypair, // from authority
+          transferAmount,
+          [userKeypair],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+      const token3Data = await getAccount(
+        connection,
+        token3,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token1Data.owner.toBase58()).toEqual(token3Data.owner.toBase58())
 
       // Failing to change authority
       await expect(
         setAuthority(
           connection,
           txFeePayer,
-          token,
+          token1,
           userKeypair,
           AuthorityType.AccountOwner,
           user2,
@@ -266,7 +287,7 @@ describe('Solana', () => {
         freezeAccount(
           connection,
           txFeePayer,
-          token,
+          token1,
           mint,
           userKeypair,
           undefined,
@@ -279,7 +300,7 @@ describe('Solana', () => {
       await freezeAccount(
         connection,
         txFeePayer,
-        token,
+        token1,
         mint,
         adminKeypair,
         undefined,
@@ -287,14 +308,14 @@ describe('Solana', () => {
         TOKEN_2022_PROGRAM_ID
       )
       console.log(
-        `Token account ${token.toBase58()} frozen successfully by admin ${admin.toBase58()}`
+        `Token account ${token1.toBase58()} frozen successfully by admin ${admin.toBase58()}`
       )
       // user cannot un-freeze account
       await expect(
         thawAccount(
           connection,
           txFeePayer,
-          token,
+          token1,
           mint,
           userKeypair,
           undefined,
@@ -305,7 +326,7 @@ describe('Solana', () => {
       await thawAccount(
         connection,
         txFeePayer,
-        token,
+        token1,
         mint,
         adminKeypair,
         undefined,
@@ -313,14 +334,14 @@ describe('Solana', () => {
         TOKEN_2022_PROGRAM_ID
       )
       console.log(
-        `Token account ${token.toBase58()} thawed successfully by admin ${admin.toBase58()}`
+        `Token account ${token1.toBase58()} thawed successfully by admin ${admin.toBase58()}`
       )
 
       // User can burn
       await burn(
         connection,
         txFeePayer,
-        token,
+        token1,
         mint,
         userKeypair,
         transferAmount,
@@ -333,7 +354,7 @@ describe('Solana', () => {
       await approve(
         connection,
         txFeePayer,
-        token,
+        token1,
         user2,
         userKeypair,
         LAMPORTS_PER_SOL * 10,
@@ -346,7 +367,7 @@ describe('Solana', () => {
         transfer(
           connection,
           txFeePayer,
-          token,
+          token1,
           token2,
           user2Keypair, // from authority
           transferAmount,
@@ -359,21 +380,21 @@ describe('Solana', () => {
       await revoke(
         connection,
         txFeePayer,
-        token,
+        token1,
         userKeypair,
         undefined,
         undefined,
         TOKEN_2022_PROGRAM_ID
       )
       console.log(
-        `Token account ${token.toBase58()} un-delegated successfully by user ${user.toBase58()}`
+        `Token account ${token1.toBase58()} un-delegated successfully by user ${user.toBase58()}`
       )
 
       // Admin can burn
       await burn(
         connection,
         txFeePayer,
-        token,
+        token1,
         mint,
         adminKeypair,
         transferAmount,
@@ -381,13 +402,13 @@ describe('Solana', () => {
         undefined,
         TOKEN_2022_PROGRAM_ID
       )
-      token1 = await getAccount(
+      token1Data = await getAccount(
         connection,
-        token,
+        token1,
         'confirmed',
         TOKEN_2022_PROGRAM_ID
       )
-      expect(token1.amount).toBe(mintAmount - 2n * transferAmount)
+      expect(token1Data.amount).toBe(mintAmount - 2n * transferAmount)
     })
   })
 })
