@@ -15,6 +15,7 @@
   "author": "chalda",
   "license": "MIT",
   "devDependencies": {
+    "bs58": "^6.0.0",
     "decimal.js": "10.5.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^22.5.4",

@@ -43,6 +43,7 @@ import {
 import { WrappedProcess } from '@marinade.finance/ts-common/dist/src/process'
 import { Decimal } from 'decimal.js'
 import crypto from 'crypto'
+import bs58 from 'bs58'
 
 describe('Solana', () => {
   let connection: Connection
@@ -57,7 +58,7 @@ describe('Solana', () => {
   })
 
   describe('test token 2022', () => {
-    it.only('seeded mint token 2022', async () => {
+    it('seeded mint token 2022', async () => {
       const userKeypair = Keypair.generate()
       const user = userKeypair.publicKey
       await airdrop(connection, user, 3 * LAMPORTS_PER_SOL)
@@ -154,10 +155,9 @@ describe('Solana', () => {
       const decimalArray = mintDataRaw ? Array.from(mintDataRaw.data) : []
       console.log('mint data: ' + decimalArray)
       console.log('admin data: ' + Array.from(admin.toBuffer()))
-
-      if (true === true) {
-        return
-      }
+      const tokenDataRaw = await connection.getAccountInfo(associatedToken)
+      const tokenData = tokenDataRaw ? Array.from(tokenDataRaw.data) : []
+      console.log('token data: ' + tokenData)
 
       // permanent delegate cannot mint
       await expect(
@@ -298,7 +298,30 @@ describe('Solana', () => {
         TOKEN_2022_PROGRAM_ID
       )
 
-      // TODO: reporting on minted tokens by delegate authority
+      // get mints that matches the permanent delegate
+      //  - data size: 242 with our extensions
+      //  - permanent delegate is 13rd in the enum set (https://github.com/solana-program/token-2022/blob/848e9d8fe0a100431743504cbc50cc61b3349797/program/src/extension/mod.rs#L1058)
+      //    - it is repr-C, as u16 in little-endian: '12, 0'
+      //  - next is size of option data (https://github.com/solana-program/token-2022/blob/848e9d8fe0a100431743504cbc50cc61b3349797/program/src/extension/permanent_delegate.rs)
+      //    - 32 bytes for the public key: '32, 0'
+      //  - next is the public key of the permanent delegate
+      const searchBytes = [12, 0, 32, 0, ...admin.toBytes()]
+      const searchData = Buffer.from(searchBytes)
+      const dataSize = mintDataRaw?.data.length ?? 0
+      const memcmp = {
+        offset: dataSize - searchBytes.length,
+        bytes: bs58.encode(searchData),
+      }
+      console.log('memcmp: ' + JSON.stringify(memcmp))
+      const accounts = await connection.getProgramAccounts(
+        TOKEN_2022_PROGRAM_ID,
+        { filters: [{ dataSize }, { memcmp }] }
+      )
+      console.log(
+        `Found ${accounts.length} mints with permanent delegate ${user.toBase58()}`
+      )
+      expect(accounts.length).toEqual(1)
+      expect(accounts[0]?.pubkey.toBase58()).toEqual(mintAddress.toBase58())
     })
 
     it('mint token 2022', async () => {
@@ -856,11 +879,6 @@ async function getSeededMintInstructions(
       seed,
       programId: token22ProgramId,
     }),
-    createInitializePermanentDelegateInstruction(
-      mintSeededAddress,
-      admin,
-      TOKEN_2022_PROGRAM_ID
-    ),
     createInitializeNonTransferableMintInstruction(
       mintSeededAddress,
       token22ProgramId
@@ -870,7 +888,12 @@ async function getSeededMintInstructions(
       admin,
       token22ProgramId
     ),
-    // not possible to initialize immutable owner for a mint
+    // for searching with getProgramAccounts it is important to have this extension as last one
+    createInitializePermanentDelegateInstruction(
+      mintSeededAddress,
+      admin,
+      TOKEN_2022_PROGRAM_ID
+    ), // -- not possible to initialize immutable owner for a mint
     // createInitializeImmutableOwnerInstruction(
     //   mintSeededAddress,
     //   token22ProgramId
