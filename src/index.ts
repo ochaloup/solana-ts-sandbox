@@ -1,5 +1,5 @@
 function main(): void {
-  console.log('🚀 TypeScript Demo');
+  console.log('🚀 Solana TypeScript Demo');
 }
 
 main();

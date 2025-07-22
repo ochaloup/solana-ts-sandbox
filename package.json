@@ -26,6 +26,7 @@
     "@marinade.finance/ts-common": "3.3.0",
     "@solana/web3.js": "^1.98.2",
     "@solana/spl-token": "^0.4.13",
+    "@solana/spl-memo": "^0.2.5",
     "bn.js": "^5.2.1",
     "jest": "^30.0.0",
     "ts-jest": "^29.2.5",

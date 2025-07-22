@@ -22,7 +22,10 @@ import {
   approve,
   revoke,
   thawAccount,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createMintToInstruction,
 } from '@solana/spl-token'
+import { createMemoInstruction } from '@solana/spl-memo'
 import {
   Connection,
   Keypair,
@@ -31,6 +34,7 @@ import {
   sendAndConfirmTransaction,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
 } from '@solana/web3.js'
 import {
   spawnTestValidator,
@@ -53,6 +57,95 @@ describe('Solana', () => {
   })
 
   describe('test token 2022', () => {
+    it('seeded mint token 2022', async () => {
+      const userKeypair = Keypair.generate()
+      const user = userKeypair.publicKey
+      await airdrop(connection, user, 3 * LAMPORTS_PER_SOL)
+      const adminKeypair = Keypair.generate() // delegate authority
+      const admin = adminKeypair.publicKey
+      await airdrop(connection, admin, 55 * LAMPORTS_PER_SOL)
+
+      const [mintAddress, mintIxes] = await getSeededMintInstructions(
+        connection,
+        userKeypair,
+        admin
+      )
+      const mintData = await connection.getAccountInfo(mintAddress)
+      expect(mintData).toBeNull()
+
+      const associatedToken = await getAssociatedTokenAddress(
+        mintAddress,
+        user,
+        false,
+        TOKEN_2022_PROGRAM_ID
+      )
+      const associatedTokenIx =
+        createAssociatedTokenAccountIdempotentInstruction(
+          user,
+          associatedToken,
+          user,
+          mintAddress,
+          TOKEN_2022_PROGRAM_ID
+        )
+
+      const mintIx = createMintToInstruction(
+        mintAddress,
+        associatedToken,
+        user,
+        22,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+
+      const additionalIxes = [
+        SystemProgram.transfer({
+          fromPubkey: user,
+          toPubkey: admin,
+          lamports: 111,
+        }),
+        createMemoInstruction('This is a memo for the transaction'),
+      ]
+
+      const transaction = new Transaction().add(
+        ...mintIxes,
+        associatedTokenIx,
+        mintIx,
+        ...additionalIxes
+      )
+      transaction.feePayer = user
+      transaction.recentBlockhash = (
+        await connection.getRecentBlockhash()
+      ).blockhash
+      transaction.sign(userKeypair)
+      console.log(
+        `Sending a transaction of 'create mint + create token + mint + sol memo transfer' of size ${transaction.serialize().length}`
+      )
+      try {
+        const signature = await sendAndConfirmTransaction(
+          connection,
+          transaction,
+          [userKeypair],
+          undefined
+        )
+        console.log(
+          `Transaction confirmed with signature: ${signature}, mint: ${mintAddress.toBase58()}`
+        )
+        const mintData = await getMint(
+          connection,
+          mintAddress,
+          'confirmed',
+          TOKEN_2022_PROGRAM_ID
+        )
+        console.log(
+          `Mint ${mintData.address.toBase58()} created successfully (${mintData.mintAuthority?.toBase58() || 'none'}), ` +
+            `decimals: ${mintData.decimals}, supply: ${mintData.supply.toString()}, freezeAuthority: ${mintData.freezeAuthority?.toBase58() || 'none'}`
+        )
+      } catch (e) {
+        console.error('Transaction failed:', jsonStringify(e, 2))
+        throw e
+      }
+    })
+
     it('mint token 2022', async () => {
       const mintKeypair = Keypair.generate()
       const mint = mintKeypair.publicKey
@@ -565,6 +658,64 @@ async function createSeededToken(
     undefined
   )
   return seededToken
+}
+
+async function getSeededMintInstructions(
+  connection: Connection,
+  minter: Keypair,
+  admin: PublicKey,
+  seed: string = 'MNDENATIVE_BID',
+  extensions: ExtensionType[] = [
+    ExtensionType.PermanentDelegate,
+    ExtensionType.NonTransferable,
+  ]
+): Promise<[PublicKey, TransactionInstruction[]]> {
+  const token22ProgramId = TOKEN_2022_PROGRAM_ID
+  const accountLen = getMintLen(extensions)
+  const accountRentLamports =
+    await connection.getMinimumBalanceForRentExemption(accountLen)
+  if (seed.length > 32) {
+    throw new Error(
+      `Seed must be 32 characters or less, got ${seed.length} (seed: ${seed})`
+    )
+  }
+  const mintSeededAddress = await PublicKey.createWithSeed(
+    minter.publicKey,
+    seed,
+    token22ProgramId
+  )
+  const instructions = [
+    SystemProgram.createAccountWithSeed({
+      fromPubkey: minter.publicKey,
+      newAccountPubkey: mintSeededAddress,
+      space: accountLen,
+      lamports: accountRentLamports,
+      basePubkey: minter.publicKey,
+      seed,
+      programId: token22ProgramId,
+    }),
+    createInitializePermanentDelegateInstruction(
+      mintSeededAddress,
+      admin,
+      TOKEN_2022_PROGRAM_ID
+    ),
+    createInitializeNonTransferableMintInstruction(
+      mintSeededAddress,
+      token22ProgramId
+    ),
+    createInitializeMint2Instruction(
+      mintSeededAddress,
+      0,
+      minter.publicKey,
+      admin,
+      token22ProgramId
+    ),
+  ]
+  console.log(
+    `Instructions for creating seeded mint account ${mintSeededAddress.toBase58()} ` +
+      `(seed: ${seed}, basePubkey/minter: ${minter.publicKey.toBase58()}, admin: ${admin.toBase58()}) prepared`
+  )
+  return [mintSeededAddress, instructions]
 }
 
 async function multipleMint({
