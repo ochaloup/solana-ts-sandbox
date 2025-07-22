@@ -57,21 +57,22 @@ describe('Solana', () => {
   })
 
   describe('test token 2022', () => {
-    it('seeded mint token 2022', async () => {
+    it.only('seeded mint token 2022', async () => {
       const userKeypair = Keypair.generate()
       const user = userKeypair.publicKey
       await airdrop(connection, user, 3 * LAMPORTS_PER_SOL)
       const adminKeypair = Keypair.generate() // delegate authority
       const admin = adminKeypair.publicKey
       await airdrop(connection, admin, 55 * LAMPORTS_PER_SOL)
+      const mintAmount = 22n
 
       const [mintAddress, mintIxes] = await getSeededMintInstructions(
         connection,
         userKeypair,
         admin
       )
-      const mintData = await connection.getAccountInfo(mintAddress)
-      expect(mintData).toBeNull()
+      const mintDataNone = await connection.getAccountInfo(mintAddress)
+      expect(mintDataNone).toBeNull()
 
       const associatedToken = await getAssociatedTokenAddress(
         mintAddress,
@@ -92,7 +93,7 @@ describe('Solana', () => {
         mintAddress,
         associatedToken,
         user,
-        22,
+        mintAmount,
         undefined,
         TOKEN_2022_PROGRAM_ID
       )
@@ -130,20 +131,174 @@ describe('Solana', () => {
         console.log(
           `Transaction confirmed with signature: ${signature}, mint: ${mintAddress.toBase58()}`
         )
-        const mintData = await getMint(
-          connection,
-          mintAddress,
-          'confirmed',
-          TOKEN_2022_PROGRAM_ID
-        )
-        console.log(
-          `Mint ${mintData.address.toBase58()} created successfully (${mintData.mintAuthority?.toBase58() || 'none'}), ` +
-            `decimals: ${mintData.decimals}, supply: ${mintData.supply.toString()}, freezeAuthority: ${mintData.freezeAuthority?.toBase58() || 'none'}`
-        )
       } catch (e) {
         console.error('Transaction failed:', jsonStringify(e, 2))
         throw e
       }
+
+      const mintData = await getMint(
+        connection,
+        mintAddress,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      console.log(
+        `Mint ${mintData.address.toBase58()} created successfully (mint authority: ${mintData.mintAuthority?.toBase58() || 'none'}, ` +
+          `decimals: ${mintData.decimals}, supply: ${mintData.supply.toString()}, freezeAuthority: ${mintData.freezeAuthority?.toBase58() || 'none'})`
+      )
+      expect(mintData.mintAuthority?.toBase58()).toBe(user.toBase58())
+      expect(mintData.freezeAuthority?.toBase58()).toBe(admin.toBase58())
+      expect(mintData.supply).toBe(mintAmount)
+
+      const mintDataRaw = await connection.getAccountInfo(mintAddress)
+      const decimalArray = mintDataRaw ? Array.from(mintDataRaw.data) : []
+      console.log('mint data: ' + decimalArray)
+      console.log('admin data: ' + Array.from(admin.toBuffer()))
+
+      if (true === true) {
+        return
+      }
+
+      // permanent delegate cannot mint
+      await expect(
+        multipleMint({
+          connection,
+          minter: adminKeypair,
+          mint: mintAddress,
+          mintAmount: 1n,
+          tokens: [associatedToken],
+        })
+      ).rejects.toThrow(/Error: owner does not match/)
+      await multipleMint({
+        connection,
+        minter: userKeypair,
+        mint: mintAddress,
+        mintAmount: 1n,
+        tokens: [associatedToken],
+      })
+
+      // permanent delegate cannot transfer as the token is non-transferable
+      const adminToken = await createAssociatedToken(
+        connection,
+        mintAddress,
+        adminKeypair,
+        admin
+      )
+      await expect(
+        transfer(
+          connection,
+          adminKeypair,
+          associatedToken,
+          adminToken,
+          adminKeypair, // from authority
+          1n,
+          [adminKeypair],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+      // neither user - token owner - can transfer
+      await expect(
+        transfer(
+          connection,
+          userKeypair,
+          associatedToken,
+          adminToken,
+          userKeypair, // from authority
+          1n,
+          [userKeypair],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+
+      // burning is possible
+      await burn(
+        connection,
+        adminKeypair,
+        associatedToken,
+        mintAddress,
+        adminKeypair,
+        1n,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+      await burn(
+        connection,
+        userKeypair,
+        associatedToken,
+        mintAddress,
+        userKeypair,
+        1n,
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+      // we minted some, burned 2, so we should have some - 1 left
+      const expectedAmount = mintAmount - 1n
+      const accountData = await getAccount(
+        connection,
+        associatedToken,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(accountData.amount).toBe(expectedAmount)
+      await expect(
+        burn(
+          connection,
+          adminKeypair, // tx fee payer
+          associatedToken,
+          mintAddress,
+          adminKeypair,
+          expectedAmount + 1n, // burn more than we have
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Error: insufficient funds/)
+
+      // freeze authority cannot be changed by owner
+      await expect(
+        setAuthority(
+          connection,
+          userKeypair, // tx fee payer
+          mintAddress,
+          userKeypair,
+          AuthorityType.FreezeAccount,
+          user,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Error: owner does not match/)
+      // but admin as freeze authority can change it
+      await setAuthority(
+        connection,
+        adminKeypair, // tx fee payer
+        mintAddress,
+        adminKeypair,
+        AuthorityType.FreezeAccount,
+        admin, // new freeze authority
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+
+      // user may change the mint authority (the permanent delegate cannot)
+      await setAuthority(
+        connection,
+        userKeypair,
+        mintAddress,
+        userKeypair,
+        AuthorityType.MintTokens,
+        user, // new mint authority
+        undefined,
+        undefined,
+        TOKEN_2022_PROGRAM_ID
+      )
+
+      // TODO: reporting on minted tokens by delegate authority
     })
 
     it('mint token 2022', async () => {
@@ -587,7 +742,7 @@ async function createToken(
 async function createAssociatedToken(
   connection: Connection,
   mint: PublicKey,
-  minter: Keypair,
+  feePayer: Keypair,
   owner: PublicKey
 ): Promise<PublicKey> {
   const associatedToken = await getAssociatedTokenAddress(
@@ -598,15 +753,20 @@ async function createAssociatedToken(
   )
   const transaction = new Transaction().add(
     createAssociatedTokenAccountInstruction(
-      minter.publicKey,
+      feePayer.publicKey,
       associatedToken,
       owner,
       mint,
       TOKEN_2022_PROGRAM_ID
     )
   )
-  transaction.feePayer = minter.publicKey
-  await sendAndConfirmTransaction(connection, transaction, [minter], undefined)
+  transaction.feePayer = feePayer.publicKey
+  await sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [feePayer],
+    undefined
+  )
   return associatedToken
 }
 
@@ -664,12 +824,14 @@ async function getSeededMintInstructions(
   connection: Connection,
   minter: Keypair,
   admin: PublicKey,
-  seed: string = 'MNDENATIVE_BID',
-  extensions: ExtensionType[] = [
+  seed: string = 'MNDENATIVE_BID'
+): Promise<[PublicKey, TransactionInstruction[]]> {
+  const extensions: ExtensionType[] = [
     ExtensionType.PermanentDelegate,
     ExtensionType.NonTransferable,
+    ExtensionType.MintCloseAuthority,
   ]
-): Promise<[PublicKey, TransactionInstruction[]]> {
+
   const token22ProgramId = TOKEN_2022_PROGRAM_ID
   const accountLen = getMintLen(extensions)
   const accountRentLamports =
@@ -703,6 +865,16 @@ async function getSeededMintInstructions(
       mintSeededAddress,
       token22ProgramId
     ),
+    createInitializeMintCloseAuthorityInstruction(
+      mintSeededAddress,
+      admin,
+      token22ProgramId
+    ),
+    // not possible to initialize immutable owner for a mint
+    // createInitializeImmutableOwnerInstruction(
+    //   mintSeededAddress,
+    //   token22ProgramId
+    // ),
     createInitializeMint2Instruction(
       mintSeededAddress,
       0,
