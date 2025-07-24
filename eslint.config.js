@@ -36,6 +36,7 @@ module.exports = [
       'prefer-const': 'error',
       'no-var': 'error',
       'semi': ['error', 'never'],
+      'jest/no-focused-tests': 'off',
 
       'prettier/prettier': [
         'error',

@@ -45,6 +45,8 @@ import { Decimal } from 'decimal.js'
 import crypto from 'crypto'
 import bs58 from 'bs58'
 
+// NOTE: extension guide doc: https://www.solana-program.com/docs/token-2022/extensions#permanent-delegate
+
 describe('Solana', () => {
   let connection: Connection
   let testValidator: WrappedProcess | undefined = undefined
@@ -58,7 +60,7 @@ describe('Solana', () => {
   })
 
   describe('test token 2022', () => {
-    it('seeded mint token 2022', async () => {
+    it.only('seeded mint token 2022', async () => {
       const userKeypair = Keypair.generate()
       const user = userKeypair.publicKey
       await airdrop(connection, user, 3 * LAMPORTS_PER_SOL)
@@ -157,7 +159,10 @@ describe('Solana', () => {
       console.log('admin data: ' + Array.from(admin.toBuffer()))
       const tokenDataRaw = await connection.getAccountInfo(associatedToken)
       const tokenData = tokenDataRaw ? Array.from(tokenDataRaw.data) : []
-      console.log('token data: ' + tokenData)
+      console.log(
+        `token owner: ${tokenDataRaw?.owner.toBase58()}, token lamports: ${tokenDataRaw?.lamports}, ` +
+          `token data size: ${tokenData.length}, data: ${tokenData}`
+      )
 
       // permanent delegate cannot mint
       await expect(
