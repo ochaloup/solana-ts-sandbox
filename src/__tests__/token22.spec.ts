@@ -24,9 +24,12 @@ import {
   thawAccount,
   createAssociatedTokenAccountIdempotentInstruction,
   createMintToInstruction,
+  unpackAccount,
+  Account,
 } from '@solana/spl-token'
 import { createMemoInstruction } from '@solana/spl-memo'
 import {
+  Commitment,
   Connection,
   Keypair,
   LAMPORTS_PER_SOL,
@@ -60,7 +63,7 @@ describe('Solana', () => {
   })
 
   describe('test token 2022', () => {
-    it.only('seeded mint token 2022', async () => {
+    it('seeded mint token 2022', async () => {
       const userKeypair = Keypair.generate()
       const user = userKeypair.publicKey
       await airdrop(connection, user, 3 * LAMPORTS_PER_SOL)
@@ -329,7 +332,7 @@ describe('Solana', () => {
       expect(accounts[0]?.pubkey.toBase58()).toEqual(mintAddress.toBase58())
     })
 
-    it('mint token 2022', async () => {
+    it.only('mint token 2022 with multiple associated', async () => {
       const mintKeypair = Keypair.generate()
       const mint = mintKeypair.publicKey
 
@@ -461,12 +464,13 @@ describe('Solana', () => {
       )
 
       const mintAmount = 100n
+      const tokensToMint = [token1, token2, token3, token4]
       await multipleMint({
         connection,
         minter: adminKeypair,
         mint,
         mintAmount,
-        tokens: [token1, token2, token3, token4],
+        tokens: tokensToMint,
       })
 
       // Failing to transfer from non-transferable mint
@@ -480,11 +484,51 @@ describe('Solana', () => {
           token2,
           userKeypair, // from authority
           transferAmount,
+          [],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+      await expect(
+        transfer(
+          connection,
+          txFeePayer,
+          token2,
+          token1,
+          user2Keypair, // from authority
+          transferAmount,
+          [],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+      await expect(
+        transfer(
+          connection,
+          txFeePayer,
+          token3,
+          token1,
+          userKeypair, // from authority
+          transferAmount,
           [userKeypair],
           undefined,
           TOKEN_2022_PROGRAM_ID
         )
       ).rejects.toThrow(/Transfer is disabled for this mint/)
+      await expect(
+        transfer(
+          connection,
+          txFeePayer,
+          token4,
+          token1,
+          userKeypair, // from authority
+          transferAmount,
+          [userKeypair],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/Transfer is disabled for this mint/)
+
       let token1Data = await getAccount(
         connection,
         token1,
@@ -534,6 +578,19 @@ describe('Solana', () => {
         setAuthority(
           connection,
           txFeePayer,
+          token2,
+          user2Keypair,
+          AuthorityType.AccountOwner,
+          user,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/The owner authority cannot be changed/)
+      await expect(
+        setAuthority(
+          connection,
+          txFeePayer,
           token3,
           userKeypair,
           AuthorityType.AccountOwner,
@@ -571,6 +628,78 @@ describe('Solana', () => {
           TOKEN_2022_PROGRAM_ID
         )
       ).rejects.toThrow(/owner does not match/)
+      const token1DataF = await getAccount(
+        connection,
+        token1,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token1DataF.owner.toBase58()).toEqual(
+        userKeypair.publicKey.toBase58()
+      )
+      await expect(
+        freezeAccount(
+          connection,
+          txFeePayer,
+          token2,
+          mint,
+          user2Keypair,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/owner does not match/)
+      const token2DataF = await getAccount(
+        connection,
+        token2,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token2DataF.owner.toBase58()).toEqual(
+        user2Keypair.publicKey.toBase58()
+      )
+      await expect(
+        freezeAccount(
+          connection,
+          txFeePayer,
+          token3,
+          mint,
+          userKeypair,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/owner does not match/)
+      const token3DataF = await getAccount(
+        connection,
+        token3,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token3DataF.owner.toBase58()).toEqual(
+        userKeypair.publicKey.toBase58()
+      )
+      await expect(
+        freezeAccount(
+          connection,
+          txFeePayer,
+          token4,
+          mint,
+          userKeypair,
+          undefined,
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        )
+      ).rejects.toThrow(/owner does not match/)
+      const token4DataF = await getAccount(
+        connection,
+        token4,
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID
+      )
+      expect(token4DataF.owner.toBase58()).toEqual(
+        userKeypair.publicKey.toBase58()
+      )
 
       // Admin may freeze and unfreeze account
       await freezeAccount(
@@ -678,13 +807,20 @@ describe('Solana', () => {
         undefined,
         TOKEN_2022_PROGRAM_ID
       )
+      console.log(
+        `Token account ${token1.toBase58()} burned successfully by admin ${admin.toBase58()}`
+      )
       token1Data = await getAccount(
         connection,
         token1,
         'confirmed',
         TOKEN_2022_PROGRAM_ID
       )
+      console.log(`Checking token ${token1.toBase58()} data after burn`)
       expect(token1Data.amount).toBe(mintAmount - 2n * transferAmount)
+
+      const tokens = await getTokenAccounts(connection, mint)
+      expect(tokens).toHaveLength(tokensToMint.length)
     })
   })
 })
@@ -951,4 +1087,33 @@ async function multipleMint({
   )
 
   return signatures
+}
+
+async function getTokenAccounts(
+  connection: Connection,
+  mint: PublicKey,
+  commitment: Commitment = 'confirmed'
+): Promise<Account[]> {
+  const memcmp = {
+    offset: 0, // mint offset location
+    bytes: mint.toBase58(), // mint address
+  }
+  const accounts = await connection.getProgramAccounts(TOKEN_2022_PROGRAM_ID, {
+    commitment,
+    filters: [{ memcmp }],
+  })
+  const tokenAccounts: Account[] = []
+  for (const account of accounts) {
+    const unpackedTokenAccount = unpackAccount(
+      account.pubkey,
+      account.account,
+      TOKEN_2022_PROGRAM_ID
+    )
+    // rent exempt - 0.00210192-0.0025752
+    console.log(
+      `Token account: ${account.pubkey.toBase58()}, (${account.account.lamports / LAMPORTS_PER_SOL} SOLs), owner: ${unpackedTokenAccount.owner}, amount: ${unpackedTokenAccount.amount}`
+    )
+    tokenAccounts.push(unpackedTokenAccount)
+  }
+  return tokenAccounts
 }
